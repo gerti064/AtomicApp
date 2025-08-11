@@ -1,22 +1,21 @@
-// app/auth/Login.tsx
-import React, { useState } from "react";
-import { View, Text, TextInput, Button, StyleSheet, Alert } from "react-native";
-import { useRouter } from "expo-router";
+import React, { useState } from 'react';
+import { View, Text, TextInput, Button, StyleSheet, Alert } from 'react-native';
+import { useRouter } from 'expo-router';
 
 export default function Login() {
   const router = useRouter();
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
 
   function handleSubmit() {
     if (!email || !password) {
-      Alert.alert("Error", "Please fill in all fields");
+      Alert.alert('Error', 'Please fill in all fields');
       return;
     }
-    Alert.alert("Success", `Logged in with ${email}`, [
+    Alert.alert('Success', `Logged in with ${email}`, [
       {
-        text: "OK",
-        onPress: () => router.replace("/auth/ProfileScreen"),
+        text: 'OK',
+        onPress: () => router.replace('/Home'), // Redirect to Home screen here
       },
     ]);
   }
@@ -45,8 +44,8 @@ export default function Login() {
       <Button title="Login" onPress={handleSubmit} />
 
       <Text style={styles.text}>
-        Don't have an account?{" "}
-        <Text style={styles.link} onPress={() => router.push("/auth/SignUp")}>
+        Don't have an account?{' '}
+        <Text style={styles.link} onPress={() => router.push('/auth/SignUp')}>
           Sign Up
         </Text>
       </Text>
@@ -55,15 +54,15 @@ export default function Login() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, padding: 20, justifyContent: "center" },
-  title: { fontSize: 24, fontWeight: "bold", marginBottom: 20, textAlign: "center" },
+  container: { flex: 1, padding: 20, justifyContent: 'center' },
+  title: { fontSize: 24, fontWeight: 'bold', marginBottom: 20, textAlign: 'center' },
   input: {
     borderWidth: 1,
-    borderColor: "#ccc",
+    borderColor: '#ccc',
     marginBottom: 15,
     padding: 10,
     borderRadius: 5,
   },
-  text: { marginTop: 15, textAlign: "center" },
-  link: { color: "blue", fontWeight: "bold" },
+  text: { marginTop: 15, textAlign: 'center' },
+  link: { color: 'blue', fontWeight: 'bold' },
 });

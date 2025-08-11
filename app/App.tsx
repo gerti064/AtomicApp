@@ -1,6 +1,8 @@
 import React from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
+import 'expo-router/entry';
+
 
 import FirstScreen from './auth/FirstScreen';
 import Login from './auth/Login';

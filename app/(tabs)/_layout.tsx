@@ -1,10 +1,17 @@
-import React from 'react';
-import { View, Text } from 'react-native';
+import { Tabs } from 'expo-router';
 
-export default function HomeScreen() {
+export default function TabsLayout() {
   return (
-    <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
-      <Text>Home Screen</Text>
-    </View>
+    <Tabs
+      screenOptions={{
+        headerShown: false,
+        tabBarActiveTintColor: '#007AFF',
+        tabBarInactiveTintColor: '#8e8e93',
+      }}
+    >
+      <Tabs.Screen name="Home" options={{ title: 'Home' }} />
+      <Tabs.Screen name="Orders" options={{ title: 'Orders' }} />
+      <Tabs.Screen name="Profile" options={{ title: 'Profile' }} />
+    </Tabs>
   );
 }

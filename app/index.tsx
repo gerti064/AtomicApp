@@ -1,23 +1,16 @@
-// app/index.tsx
-import React from "react";
-import { View, Text, Button, StyleSheet } from "react-native";
-import { useRouter } from "expo-router";
+import { useRouter } from 'expo-router';
+import { useEffect } from 'react';
 
-export default function HomeScreen() {
+export default function IndexRedirect() {
   const router = useRouter();
 
-  return (
-    <View style={styles.container}>
-      <Text style={styles.title}>Welcome to the Home Screen!</Text>
-      <Button
-        title="Go to Welcome"
-        onPress={() => router.push("/auth/FirstScreen")}
-      />
-    </View>
-  );
-}
+  useEffect(() => {
+    const timeout = setTimeout(() => {
+      router.replace('/auth/FirstScreen');
+    }, 50); // delay 50ms
 
-const styles = StyleSheet.create({
-  container: { flex: 1, justifyContent: "center", alignItems: "center" },
-  title: { fontSize: 24, fontWeight: "bold" },
-});
+    return () => clearTimeout(timeout);
+  }, []);
+
+  return null;
+}
