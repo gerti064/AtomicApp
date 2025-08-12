@@ -1,9 +1,24 @@
+// app/auth/Login.tsx
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import React, { useEffect, useRef, useState } from 'react';
-import { Alert, Animated, Dimensions, KeyboardAvoidingView, Platform, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import {
+  Alert,
+  Animated,
+  Dimensions,
+  KeyboardAvoidingView,
+  Platform,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
+  ActivityIndicator,
+} from 'react-native';
+import * as SecureStore from 'expo-secure-store';
 
 const { width, height } = Dimensions.get('window');
+const API_URL = 'http://134.122.71.254:4000'; // ⬅️ change to your server/domain (use HTTPS in production)
 
 export default function Login() {
   const router = useRouter();
@@ -11,7 +26,8 @@ export default function Login() {
   const [password, setPassword] = useState('');
   const [isEmailFocused, setIsEmailFocused] = useState(false);
   const [isPasswordFocused, setIsPasswordFocused] = useState(false);
-  
+  const [loading, setLoading] = useState(false);
+
   const fadeInAnim = useRef(new Animated.Value(0)).current;
   const slideUpAnim = useRef(new Animated.Value(50)).current;
   const glowAnim = useRef(new Animated.Value(0)).current;
@@ -51,18 +67,41 @@ export default function Login() {
     return () => glowLoop.stop();
   }, []);
 
-  function handleSubmit() {
+  const handleSubmit = async () => {
     if (!email || !password) {
       Alert.alert('Error', 'Please fill in all fields');
       return;
     }
-    Alert.alert('Success', `Logged in with ${email}`, [
-      {
-        text: 'OK',
-        onPress: () => router.replace('/Home'),
-      },
-    ]);
-  }
+    setLoading(true);
+    try {
+      const res = await fetch(`${API_URL}/api/users/signin`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password }),
+      });
+
+      if (!res.ok) {
+        const body = await res.text();
+        throw new Error(`Login failed (${res.status}): ${body || 'Invalid credentials'}`);
+      }
+
+      const data = await res.json();
+      if (!data?.token || !data?.user?.id) {
+        throw new Error('Invalid response from server');
+      }
+
+      // Save session for Orders screen
+      await SecureStore.setItemAsync('token', data.token);
+      await SecureStore.setItemAsync('user', JSON.stringify(data.user));
+
+      // Navigate to the Orders tab
+      router.replace('/(tabs)/Orders');
+    } catch (e: any) {
+      Alert.alert('Login failed', e?.message || 'Please try again');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const glowInterpolation = glowAnim.interpolate({
     inputRange: [0, 1],
@@ -70,35 +109,28 @@ export default function Login() {
   });
 
   return (
-    <KeyboardAvoidingView 
-      style={styles.container} 
+    <KeyboardAvoidingView
+      style={styles.container}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
       {/* Background Gradient */}
       <LinearGradient
-        colors={[
-          '#0a0a0a',
-          '#1a1a2e',
-          '#16213e',
-          '#1a1a2e',
-          '#0a0a0a'
-        ]}
+        colors={['#0a0a0a', '#1a1a2e', '#16213e', '#1a1a2e', '#0a0a0a']}
         locations={[0, 0.25, 0.5, 0.75, 1]}
         style={styles.backgroundGradient}
       >
         {/* Animated glow overlay */}
-        <Animated.View style={[
-          styles.glowOverlay,
-          { opacity: glowInterpolation }
-        ]} />
+        <Animated.View style={[styles.glowOverlay, { opacity: glowInterpolation }]} />
 
-        <Animated.View style={[
-          styles.content,
-          {
-            opacity: fadeInAnim,
-            transform: [{ translateY: slideUpAnim }]
-          }
-        ]}>
+        <Animated.View
+          style={[
+            styles.content,
+            {
+              opacity: fadeInAnim,
+              transform: [{ translateY: slideUpAnim }],
+            },
+          ]}
+        >
           {/* Header Section */}
           <View style={styles.headerSection}>
             {/* Mini atom logo */}
@@ -114,7 +146,7 @@ export default function Login() {
                 <View style={[styles.miniRing, styles.miniRing2]} />
               </LinearGradient>
             </View>
-            
+
             <Text style={styles.title}>Welcome Back</Text>
             <Text style={styles.subtitle}>Sign in to your Atomic account</Text>
             <View style={styles.divider} />
@@ -125,12 +157,13 @@ export default function Login() {
             {/* Email Input */}
             <View style={styles.inputContainer}>
               <Text style={styles.inputLabel}>Email Address</Text>
-              <View style={[
-                styles.inputWrapper,
-                isEmailFocused && styles.inputWrapperFocused
-              ]}>
+              <View style={[styles.inputWrapper, isEmailFocused && styles.inputWrapperFocused]}>
                 <LinearGradient
-                  colors={isEmailFocused ? ['#ff6b35', '#f7931e'] : ['rgba(255,255,255,0.1)', 'rgba(255,255,255,0.05)']}
+                  colors={
+                    isEmailFocused
+                      ? ['#ff6b35', '#f7931e']
+                      : ['rgba(255,255,255,0.1)', 'rgba(255,255,255,0.05)']
+                  }
                   style={styles.inputGradient}
                   start={{ x: 0, y: 0 }}
                   end={{ x: 1, y: 0 }}
@@ -153,12 +186,13 @@ export default function Login() {
             {/* Password Input */}
             <View style={styles.inputContainer}>
               <Text style={styles.inputLabel}>Password</Text>
-              <View style={[
-                styles.inputWrapper,
-                isPasswordFocused && styles.inputWrapperFocused
-              ]}>
+              <View style={[styles.inputWrapper, isPasswordFocused && styles.inputWrapperFocused]}>
                 <LinearGradient
-                  colors={isPasswordFocused ? ['#ff6b35', '#f7931e'] : ['rgba(255,255,255,0.1)', 'rgba(255,255,255,0.05)']}
+                  colors={
+                    isPasswordFocused
+                      ? ['#ff6b35', '#f7931e']
+                      : ['rgba(255,255,255,0.1)', 'rgba(255,255,255,0.05)']
+                  }
                   style={styles.inputGradient}
                   start={{ x: 0, y: 0 }}
                   end={{ x: 1, y: 0 }}
@@ -188,6 +222,7 @@ export default function Login() {
             style={styles.loginButtonWrapper}
             onPress={handleSubmit}
             activeOpacity={0.85}
+            disabled={loading}
           >
             <LinearGradient
               colors={['#ff6b35', '#f7931e', '#ff8c42']}
@@ -196,7 +231,11 @@ export default function Login() {
               end={{ x: 1, y: 0 }}
             >
               <View style={styles.buttonGloss} />
-              <Text style={styles.loginButtonText}>SIGN IN</Text>
+              {loading ? (
+                <ActivityIndicator color="#fff" />
+              ) : (
+                <Text style={styles.loginButtonText}>SIGN IN</Text>
+              )}
               <View style={styles.buttonShadowInner} />
             </LinearGradient>
           </TouchableOpacity>

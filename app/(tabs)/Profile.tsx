@@ -1,5 +1,5 @@
 import { LinearGradient } from 'expo-linear-gradient';
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { 
   View, 
   Text, 
@@ -12,16 +12,12 @@ import {
   Switch
 } from 'react-native';
 import { useRouter } from "expo-router";
+import * as SecureStore from 'expo-secure-store';
 
 const { width, height } = Dimensions.get('window');
+const API_URL = 'http://134.122.71.254:4000'; // ⬅️ change to your domain (use HTTPS in production)
 
-const profileStats = [
-  { id: '1', label: 'Orders', value: '24', icon: '📦' },
-  { id: '2', label: 'Wishlist', value: '8', icon: '❤️' },
-  { id: '3', label: 'Reviews', value: '12', icon: '⭐' },
-  { id: '4', label: 'Points', value: '1,250', icon: '🏆' },
-];
-
+// Menu items unchanged
 const menuItems = [
   { id: '1', title: 'Order History', subtitle: 'View past purchases', icon: '📋', color: '#ff6b35' },
   { id: '2', title: 'Wishlist', subtitle: 'Saved items', icon: '💝', color: '#f7931e' },
@@ -35,13 +31,27 @@ const menuItems = [
 
 export default function ProfileScreen() {
   const router = useRouter();
+
+  // UI states (kept)
   const [isPremiumMember, setIsPremiumMember] = useState(true);
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
-  
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(0)).current;
   const pulseAnim = useRef(new Animated.Value(1)).current;
 
+  // 🔐 session + profile states (new)
+  const [token, setToken] = useState<string | null>(null);
+  const [userId, setUserId] = useState<number | null>(null);
+  const [userName, setUserName] = useState<string>('John Doe');
+  const [userEmail, setUserEmail] = useState<string>('john.doe@atomic.com');
+
+  // 📊 stats (optional, best-effort)
+  const [ordersCount, setOrdersCount] = useState<number>(24);
+  const [wishlistCount, setWishlistCount] = useState<number>(8);
+  const [reviewsCount, setReviewsCount] = useState<number>(12);
+  const [pointsCount, setPointsCount] = useState<number>(1250);
+
+  // — Animations (unchanged) —
   useEffect(() => {
     // Entry animations
     Animated.parallel([
@@ -80,6 +90,170 @@ export default function ProfileScreen() {
     return () => pulseLoop.stop();
   }, [isPremiumMember]);
 
+  // 🔤 initials for avatar
+  const getInitials = (name?: string, email?: string) => {
+    const source = (name && name.trim()) || (email && email.split('@')[0]) || 'User';
+    const parts = source.split(/\s+/).filter(Boolean);
+    const first = parts[0]?.[0] ?? '';
+    const second = parts[1]?.[0] ?? '';
+    return (first + second).toUpperCase() || (source[0] ?? 'U').toUpperCase();
+  };
+
+  const [avatarInitials, setAvatarInitials] = useState<string>(getInitials('John Doe'));
+
+  // 🔌 Load session from SecureStore, then fetch profile + stats
+  const loadSession = useCallback(async () => {
+    try {
+      const t = await SecureStore.getItemAsync('token');
+      const u = await SecureStore.getItemAsync('user');
+      setToken(t ?? null);
+
+      if (u) {
+        try {
+          const parsed = JSON.parse(u);
+          if (parsed?.id) setUserId(Number(parsed.id));
+          if (parsed?.name) setUserName(String(parsed.name));
+          if (parsed?.email) setUserEmail(String(parsed.email));
+          setAvatarInitials(getInitials(parsed?.name, parsed?.email));
+        } catch {
+          // ignore
+        }
+      }
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  const normalizeUser = (obj: any = {}) => {
+    const name =
+      obj.name ??
+      obj.full_name ??
+      (obj.first_name && obj.last_name ? `${obj.first_name} ${obj.last_name}` : undefined) ??
+      obj.username ??
+      userName;
+
+    const email = obj.email ?? obj.user_email ?? userEmail;
+
+    const premium =
+      !!obj.premium ||
+      /premium/i.test(String(obj.membership ?? '')) ||
+      /premium/i.test(String(obj.role ?? ''));
+
+    return { name, email, premium };
+  };
+
+  const fetchUserProfile = useCallback(async () => {
+    if (!token && !userId) return;
+
+    // Try /api/users/me first if we have a token
+    if (token) {
+      try {
+        const res = await fetch(`${API_URL}/api/users/me`, {
+          headers: {
+            Accept: 'application/json',
+            Authorization: `Bearer ${token}`,
+          },
+        });
+        if (res.ok) {
+          const data = await res.json();
+          const { name, email, premium } = normalizeUser(data?.user ?? data);
+          setUserName(name);
+          setUserEmail(email);
+          setAvatarInitials(getInitials(name, email));
+          setIsPremiumMember(premium);
+          return;
+        }
+      } catch {
+        // continue to /api/users/:id
+      }
+    }
+
+    // Fallback: GET /api/users/:id if we have userId
+    if (userId) {
+      try {
+        const res = await fetch(`${API_URL}/api/users/${userId}`, {
+          headers: { Accept: 'application/json' },
+        });
+        if (res.ok) {
+          const data = await res.json();
+          const { name, email, premium } = normalizeUser(data?.user ?? data);
+          setUserName(name);
+          setUserEmail(email);
+          setAvatarInitials(getInitials(name, email));
+          setIsPremiumMember(premium);
+        }
+      } catch {
+        // ignore
+      }
+    }
+  }, [token, userId]);
+
+  const safeCount = (x: any) => (Array.isArray(x) ? x.length : Number(x ?? 0));
+
+  const fetchStats = useCallback(async () => {
+    if (!userId) return;
+
+    try {
+      const headers: Record<string, string> = { Accept: 'application/json' };
+      if (token) headers.Authorization = `Bearer ${token}`;
+
+      const [ordersRes, wishRes, revRes, pointsRes] = await Promise.allSettled([
+        fetch(`${API_URL}/api/orders?user_id=${userId}`, { headers }),
+        fetch(`${API_URL}/api/wishlist?user_id=${userId}`, { headers }),
+        fetch(`${API_URL}/api/reviews?user_id=${userId}`, { headers }),
+        fetch(`${API_URL}/api/points?user_id=${userId}`, { headers }),
+      ]);
+
+      // Orders
+      if (ordersRes.status === 'fulfilled' && ordersRes.value.ok) {
+        const j = await ordersRes.value.json();
+        const list = Array.isArray(j) ? j : j.orders ?? [];
+        setOrdersCount(safeCount(list));
+      }
+
+      // Wishlist
+      if (wishRes.status === 'fulfilled' && wishRes.value.ok) {
+        const j = await wishRes.value.json();
+        const list = Array.isArray(j) ? j : j.items ?? j.wishlist ?? [];
+        setWishlistCount(safeCount(list));
+      }
+
+      // Reviews
+      if (revRes.status === 'fulfilled' && revRes.value.ok) {
+        const j = await revRes.value.json();
+        const list = Array.isArray(j) ? j : j.reviews ?? [];
+        setReviewsCount(safeCount(list));
+      }
+
+      // Points
+      if (pointsRes.status === 'fulfilled' && pointsRes.value.ok) {
+        const j = await pointsRes.value.json();
+        const pts =
+          j?.points ??
+          j?.loyalty_points ??
+          (Array.isArray(j) ? 0 : 0);
+        setPointsCount(Number(pts ?? 0));
+      }
+    } catch {
+      // best-effort only; leave defaults if any fail
+    }
+  }, [userId, token]);
+
+  useEffect(() => {
+    (async () => {
+      await loadSession();
+    })();
+  }, [loadSession]);
+
+  useEffect(() => {
+    fetchUserProfile();
+  }, [fetchUserProfile]);
+
+  useEffect(() => {
+    fetchStats();
+  }, [fetchStats]);
+
+  // — Renderers (kept, with dynamic data plugged in) —
   const renderHeader = () => (
     <Animated.View style={[
       styles.header,
@@ -108,7 +282,7 @@ export default function ProfileScreen() {
                 colors={['#667eea', '#764ba2']}
                 style={styles.avatarInner}
               >
-                <Text style={styles.avatarText}>JD</Text>
+                <Text style={styles.avatarText}>{avatarInitials}</Text>
               </LinearGradient>
             </View>
           </LinearGradient>
@@ -131,8 +305,8 @@ export default function ProfileScreen() {
 
         {/* User Info */}
         <View style={styles.userInfo}>
-          <Text style={styles.userName}>John Doe</Text>
-          <Text style={styles.userEmail}>john.doe@atomic.com</Text>
+          <Text style={styles.userName}>{userName}</Text>
+          <Text style={styles.userEmail}>{userEmail}</Text>
           <View style={styles.membershipContainer}>
             <LinearGradient
               colors={isPremiumMember ? ['#ffdd00', '#f7931e'] : ['rgba(255, 255, 255, 0.1)', 'rgba(255, 255, 255, 0.2)']}
@@ -161,27 +335,39 @@ export default function ProfileScreen() {
     </Animated.View>
   );
 
-  const renderStats = () => (
-    <Animated.View style={[
-      styles.statsSection,
-      { opacity: fadeAnim }
-    ]}>
-      <LinearGradient
-        colors={['rgba(255, 255, 255, 0.05)', 'rgba(255, 255, 255, 0.02)']}
-        style={styles.statsContainer}
-      >
-        <View style={styles.statsGrid}>
-          {profileStats.map((stat) => (
-            <View key={stat.id} style={styles.statCard}>
-              <Text style={styles.statIcon}>{stat.icon}</Text>
-              <Text style={styles.statValue}>{stat.value}</Text>
-              <Text style={styles.statLabel}>{stat.label}</Text>
-            </View>
-          ))}
-        </View>
-      </LinearGradient>
-    </Animated.View>
-  );
+  const renderStats = () => {
+    const profileStats = [
+      { id: '1', label: 'Orders', value: String(ordersCount), icon: '📦' },
+      { id: '2', label: 'Wishlist', value: String(wishlistCount), icon: '❤️' },
+      { id: '3', label: 'Reviews', value: String(reviewsCount), icon: '⭐' },
+      { id: '4', label: 'Points', value: String(pointsCount.toLocaleString()), icon: '🏆' },
+    ];
+
+    return (
+      <Animated.View style={[
+        styles.statsSection,
+        { opacity: fadeAnim }
+      ]}>
+        <LinearGradient
+          colors={['rgba(255, 255, 255, 0.05)', 'rgba(255, 255, 255, 0.02)']}
+          style={styles.statsContainer}
+        >
+          <View style={styles.statsGrid}>
+            {profileStats.map((stat) => (
+              <View key={stat.id} style={styles.statCard}>
+                <Text style={statIconStyle}>{stat.icon}</Text>
+                <Text style={styles.statValue}>{stat.value}</Text>
+                <Text style={styles.statLabel}>{stat.label}</Text>
+              </View>
+            ))}
+          </View>
+        </LinearGradient>
+      </Animated.View>
+    );
+  };
+
+  // Keep icon style same as before
+  const statIconStyle = { fontSize: 24, marginBottom: 8 } as const;
 
   const renderQuickActions = () => (
     <Animated.View style={[
@@ -290,6 +476,14 @@ export default function ProfileScreen() {
     </Animated.View>
   );
 
+  const handleLogout = async () => {
+    try {
+      await SecureStore.deleteItemAsync('token');
+      await SecureStore.deleteItemAsync('user');
+    } catch {}
+    router.replace("/auth/FirstScreen");
+  };
+
   const renderLogoutSection = () => (
     <Animated.View style={[
       styles.logoutSection,
@@ -297,7 +491,7 @@ export default function ProfileScreen() {
     ]}>
       <TouchableOpacity
         style={styles.logoutButton}
-        onPress={() => router.replace("/auth/FirstScreen")}
+        onPress={handleLogout}
       >
         <LinearGradient
           colors={['#ff4757', '#ff3742']}
@@ -343,6 +537,7 @@ export default function ProfileScreen() {
   );
 }
 
+/* ————————————————  STYLES (unchanged)  ———————————————— */
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -499,10 +694,6 @@ const styles = StyleSheet.create({
   statCard: {
     alignItems: 'center',
     flex: 1,
-  },
-  statIcon: {
-    fontSize: 24,
-    marginBottom: 8,
   },
   statValue: {
     fontSize: 20,
